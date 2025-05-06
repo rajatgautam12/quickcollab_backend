@@ -21,6 +21,7 @@ router.post('/', auth, async (req, res) => {
     description: req.body.description,
     status: req.body.status || 'To Do',
     board: req.body.boardId,
+    dueDate: req.body.dueDate ? new Date(req.body.dueDate) : null,
   });
 
   try {
@@ -43,6 +44,7 @@ router.put('/:id', auth, async (req, res) => {
     }
     task.title = req.body.title || task.title;
     task.description = req.body.description || task.description;
+    task.dueDate = req.body.dueDate ? new Date(req.body.dueDate) : task.dueDate;
     const updatedTask = await task.save();
     const io = req.app.get('io');
     io.to(`board:${task.board}`).emit('taskEdited', updatedTask);
