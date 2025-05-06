@@ -13,17 +13,11 @@ const taskSchema = new mongoose.Schema({
     enum: ['To Do', 'In Progress', 'Done'],
     default: 'To Do',
   },
-  dueDate: {
-    type: Date,
-  },
-  tags: [{
-    type: String,
-  }],
   board: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Board',
     required: true,
   },
-}, { timestamps: true });
+});
 
 module.exports = mongoose.model('Task', taskSchema);

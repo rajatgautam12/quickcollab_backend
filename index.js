@@ -29,7 +29,7 @@ const io = new Server(server, {
     allowedHeaders: ['Authorization', 'Content-Type'],
     credentials: true,
   },
-  transports: ['websocket', 'polling'], // Ensure WebSocket support
+  transports: ['websocket', 'polling'],
 });
 
 // Middleware
@@ -95,6 +95,40 @@ io.on('connection', (socket) => {
       }
     } catch (err) {
       console.error('Error updating task:', err);
+    }
+  });
+
+  socket.on('editTask', async (task) => {
+    try {
+      console.log('Received editTask:', task);
+      const updatedTask = await require('./models/Task').findByIdAndUpdate(
+        task._id,
+        { title: task.title, description: task.description },
+        { new: true }
+      );
+      if (updatedTask) {
+        console.log('Emitting taskEdited to board:', updatedTask.board);
+        io.to(`board:${updatedTask.board}`).emit('taskEdited', updatedTask);
+      } else {
+        console.error('Task not found:', task._id);
+      }
+    } catch (err) {
+      console.error('Error editing task:', err);
+    }
+  });
+
+  socket.on('deleteTask', async (taskId, boardId) => {
+    try {
+      console.log('Received deleteTask:', taskId);
+      const deletedTask = await require('./models/Task').findByIdAndDelete(taskId);
+      if (deletedTask) {
+        console.log('Emitting taskDeleted to board:', boardId);
+        io.to(`board:${boardId}`).emit('taskDeleted', taskId);
+      } else {
+        console.error('Task not found:', taskId);
+      }
+    } catch (err) {
+      console.error('Error deleting task:', err);
     }
   });
 
