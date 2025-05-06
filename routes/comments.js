@@ -26,7 +26,7 @@ router.get('/', async (req, res) => {
 // Create a comment
 router.post('/', auth, async (req, res) => {
   try {
-    const { content, taskId } = req.body;
+    const { content, taskId, userId } = req.body;
 
     // Validate input
     if (!content || typeof content !== 'string' || content.trim() === '') {
@@ -37,9 +37,13 @@ router.post('/', auth, async (req, res) => {
       console.error('Invalid task ID:', { taskId });
       return res.status(400).json({ message: 'Invalid task ID format' });
     }
-    if (!req.user?.id || !mongoose.Types.ObjectId.isValid(req.user.id)) {
-      console.error('Invalid user authentication:', { userId: req.user?.id });
+    if (!req.user?._id || !mongoose.Types.ObjectId.isValid(req.user._id)) {
+      console.error('Invalid user authentication:', { userId: req.user?._id, reqUser: req.user });
       return res.status(401).json({ message: 'Invalid or missing user authentication' });
+    }
+    if (userId && userId !== req.user._id.toString()) {
+      console.error('User ID mismatch:', { provided: userId, expected: req.user._id });
+      return res.status(403).json({ message: 'User ID in payload does not match authenticated user' });
     }
 
     // Check if task exists
@@ -50,29 +54,30 @@ router.post('/', auth, async (req, res) => {
     }
 
     // Check if user exists
-    const user = await User.findById(req.user.id);
+    const user = await User.findById(req.user._id);
     if (!user) {
-      console.error('User not found:', { userId: req.user.id });
+      console.error('User not found:', { userId: req.user._id });
       return res.status(404).json({ message: 'User not found' });
     }
 
     const comment = new Comment({
       content: content.trim(),
       task: taskId,
-      user: req.user.id,
+      user: req.user._id,
     });
 
     const newComment = await comment.save();
     const populatedComment = await Comment.findById(newComment._id).populate('user', 'email name');
     const io = req.app.get('io');
     io.to(`task:${taskId}`).emit('commentAdded', populatedComment);
+    console.log('Comment created and emitted:', { commentId: newComment._id, taskId });
     res.status(201).json(populatedComment);
   } catch (err) {
     console.error('Error creating comment:', {
       error: err.message,
       stack: err.stack,
       payload: req.body,
-      userId: req.user?.id,
+      userId: req.user?._id,
     });
     if (err.name === 'ValidationError') {
       return res.status(400).json({ message: `Validation error: ${err.message}` });
