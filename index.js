@@ -132,6 +132,22 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('createTask', async (task) => {
+    try {
+      console.log('Received createTask:', task);
+      const newTask = await require('./models/Task').create({
+        title: task.title,
+        description: task.description,
+        status: task.status || 'To Do',
+        board: task.board,
+      });
+      console.log('Emitting taskCreated to board:', task.board);
+      io.to(`board:${task.board}`).emit('taskCreated', newTask);
+    } catch (err) {
+      console.error('Error creating task:', err);
+    }
+  });
+
   socket.on('disconnect', () => {
     console.log('Socket.IO user disconnected:', socket.id);
   });

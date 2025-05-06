@@ -3,13 +3,14 @@ const router = express.Router();
 const Task = require('../models/Task');
 const auth = require('../middleware/auth');
 
-// Get tasks for a board
-router.get('/', auth, async (req, res) => {
+// Get tasks for a board (no auth required)
+router.get('/', async (req, res) => {
   try {
     const tasks = await Task.find({ board: req.query.boardId });
     res.json(tasks);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error('Error fetching tasks:', err);
+    res.status(500).json({ message: 'Server error while fetching tasks' });
   }
 });
 
@@ -24,9 +25,12 @@ router.post('/', auth, async (req, res) => {
 
   try {
     const newTask = await task.save();
+    const io = req.app.get('io');
+    io.to(`board:${req.body.boardId}`).emit('taskCreated', newTask);
     res.status(201).json(newTask);
   } catch (err) {
-    res.status(400).json({ message: err.message });
+    console.error('Error creating task:', err);
+    res.status(400).json({ message: 'Failed to create task' });
   }
 });
 
@@ -40,9 +44,12 @@ router.put('/:id', auth, async (req, res) => {
     task.title = req.body.title || task.title;
     task.description = req.body.description || task.description;
     const updatedTask = await task.save();
+    const io = req.app.get('io');
+    io.to(`board:${task.board}`).emit('taskEdited', updatedTask);
     res.json(updatedTask);
   } catch (err) {
-    res.status(400).json({ message: err.message });
+    console.error('Error updating task:', err);
+    res.status(400).json({ message: 'Failed to update task' });
   }
 });
 
@@ -53,10 +60,17 @@ router.delete('/:id', auth, async (req, res) => {
     if (!task) {
       return res.status(404).json({ message: 'Task not found' });
     }
-    await task.remove();
+    await Task.findByIdAndDelete(req.params.id);
+    const io = req.app.get('io');
+    io.to(`board:${task.board}`).emit('taskDeleted', req.params.id);
     res.json({ message: 'Task deleted' });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error('Error deleting task:', {
+      error: err.message,
+      stack: err.stack,
+      taskId: req.params.id,
+    });
+    res.status(500).json({ message: 'Server error while deleting task' });
   }
 });
 
