@@ -9,17 +9,38 @@ dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
+const allowedOrigins = [
+  process.env.FRONTEND_URL || 'http://localhost:3000',
+  'https://quickcollab-rajats-projects-456ae623.vercel.app',
+  'https://quickcollab-jbc1isuuo-rajats-projects-456ae623.vercel.app'
+].filter(Boolean);
+
 const io = new Server(server, {
   cors: {
-    origin: process.env.FRONTEND_URL || 'https://quickcollab-rajats-projects-456ae623.vercel.app',
-    methods: ['GET', 'POST'],
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        console.error('CORS error: Origin not allowed:', origin);
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    allowedHeaders: ['Authorization', 'Content-Type'],
+    credentials: true,
   },
+  transports: ['websocket', 'polling'], // Ensure WebSocket support
 });
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: allowedOrigins,
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  allowedHeaders: ['Authorization', 'Content-Type'],
+  credentials: true,
+}));
 app.use(express.json());
-app.set('io', io); // Store io instance for use in routes
+app.set('io', io);
 
 // MongoDB Connection
 mongoose.connect(process.env.MONGO_URI, {
@@ -35,7 +56,6 @@ const boardRoutes = require('./routes/boards');
 const taskRoutes = require('./routes/tasks');
 const commentRoutes = require('./routes/comment');
 app.use('/auth', authRoutes);
-
 app.use('/boards', boardRoutes);
 app.use('/tasks', taskRoutes);
 app.use('/comments', commentRoutes);
@@ -45,32 +65,33 @@ app.get('/', (req, res) => {
   res.send('QuickCollab Backend');
 });
 
-// Socket.io Connection
+// Socket.IO Connection
 io.on('connection', (socket) => {
-  console.log('A user connected:', socket.id);
+  console.log('Socket.IO user connected:', socket.id, 'Transport:', socket.conn.transport.name);
 
-  // Join board room
   socket.on('joinBoard', (boardId) => {
     socket.join(`board:${boardId}`);
     console.log(`User ${socket.id} joined board:${boardId}`);
   });
 
-  // Leave board room
   socket.on('leaveBoard', (boardId) => {
     socket.leave(`board:${boardId}`);
     console.log(`User ${socket.id} left board:${boardId}`);
   });
 
-  // Handle task updates (e.g., status change)
   socket.on('updateTask', async (task) => {
     try {
+      console.log('Received updateTask:', task);
       const updatedTask = await require('./models/Task').findByIdAndUpdate(
         task._id,
         { status: task.status },
         { new: true }
       );
       if (updatedTask) {
+        console.log('Emitting taskUpdated to board:', updatedTask.board);
         io.to(`board:${updatedTask.board}`).emit('taskUpdated', updatedTask);
+      } else {
+        console.error('Task not found:', task._id);
       }
     } catch (err) {
       console.error('Error updating task:', err);
@@ -78,7 +99,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.id);
+    console.log('Socket.IO user disconnected:', socket.id);
   });
 });
 
