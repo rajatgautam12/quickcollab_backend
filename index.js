@@ -54,7 +54,7 @@ mongoose.connect(process.env.MONGO_URI, {
 const authRoutes = require('./routes/auth');
 const boardRoutes = require('./routes/boards');
 const taskRoutes = require('./routes/tasks');
-const commentRoutes = require('./routes/comment');
+const commentRoutes = require('./routes/comments');
 app.use('/auth', authRoutes);
 app.use('/boards', boardRoutes);
 app.use('/tasks', taskRoutes);
@@ -74,9 +74,37 @@ io.on('connection', (socket) => {
     console.log(`User ${socket.id} joined board:${boardId}`);
   });
 
+  socket.on('joinTask', (taskId) => {
+    socket.join(`task:${taskId}`);
+    console.log(`User ${socket.id} joined task:${taskId}`);
+  });
+
   socket.on('leaveBoard', (boardId) => {
     socket.leave(`board:${boardId}`);
     console.log(`User ${socket.id} left board:${boardId}`);
+  });
+
+  socket.on('leaveTask', (taskId) => {
+    socket.leave(`task:${taskId}`);
+    console.log(`User ${socket.id} left task:${taskId}`);
+  });
+
+  socket.on('createTask', async (task) => {
+    try {
+      console.log('Received createTask:', task);
+      const newTask = await require('./models/Task').create({
+        title: task.title,
+        description: task.description,
+        status: task.status || 'To Do',
+        board: task.board,
+        dueDate: task.dueDate ? new Date(task.dueDate) : null,
+        _id: task._id,
+      });
+      console.log('Emitting taskCreated to board:', task.board);
+      io.to(`board:${task.board}`).emit('taskCreated', newTask);
+    } catch (err) {
+      console.error('Error creating task:', err);
+    }
   });
 
   socket.on('updateTask', async (task) => {
@@ -103,7 +131,7 @@ io.on('connection', (socket) => {
       console.log('Received editTask:', task);
       const updatedTask = await require('./models/Task').findByIdAndUpdate(
         task._id,
-        { title: task.title, description: task.description },
+        { title: task.title, description: task.description, dueDate: task.dueDate ? new Date(task.dueDate) : null },
         { new: true }
       );
       if (updatedTask) {
@@ -132,19 +160,20 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('createTask', async (task) => {
+  socket.on('commentAdded', async (comment) => {
     try {
-      console.log('Received createTask:', task);
-      const newTask = await require('./models/Task').create({
-        title: task.title,
-        description: task.description,
-        status: task.status || 'To Do',
-        board: task.board,
+      console.log('Received commentAdded:', comment);
+      const newComment = await require('./models/Comment').create({
+        content: comment.content,
+        task: comment.task,
+        user: comment.user,
+        createdAt: comment.createdAt || new Date(),
       });
-      console.log('Emitting taskCreated to board:', task.board);
-      io.to(`board:${task.board}`).emit('taskCreated', newTask);
+      const populatedComment = await require('./models/Comment').findById(newComment._id).populate('user', 'email');
+      console.log('Emitting commentAdded to task:', comment.task);
+      io.to(`task:${comment.task}`).emit('commentAdded', populatedComment);
     } catch (err) {
-      console.error('Error creating task:', err);
+      console.error('Error adding comment:', err);
     }
   });
 
@@ -153,7 +182,7 @@ io.on('connection', (socket) => {
   });
 });
 
-// Start Server
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+});
