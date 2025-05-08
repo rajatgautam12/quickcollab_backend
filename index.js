@@ -69,6 +69,12 @@ app.get('/', (req, res) => {
 io.on('connection', (socket) => {
   console.log('Socket.IO user connected:', socket.id, 'Transport:', socket.conn.transport.name);
 
+  // Join user-specific room
+  socket.on('joinUser', (userId) => {
+    socket.join(`user:${userId}`);
+    console.log(`User ${socket.id} joined user:${userId}`);
+  });
+
   socket.on('joinBoard', (boardId) => {
     socket.join(`board:${boardId}`);
     console.log(`User ${socket.id} joined board:${boardId}`);
@@ -95,13 +101,18 @@ io.on('connection', (socket) => {
       const newTask = await require('./models/Task').create({
         title: task.title,
         description: task.description,
-        status: task.status || 'To Do',
+        status: task.status,
         board: task.board,
         dueDate: task.dueDate ? new Date(task.dueDate) : null,
+        assignedTo: task.assignedTo || null,
         _id: task._id,
       });
+      const populatedTask = await require('./models/Task').findById(newTask._id).populate('assignedTo', 'email name');
       console.log('Emitting taskCreated to board:', task.board);
-      io.to(`board:${task.board}`).emit('taskCreated', newTask);
+      io.to(`board:${task.board}`).emit('taskCreated', populatedTask);
+      if (newTask.assignedTo) {
+        io.to(`user:${newTask.assignedTo}`).emit('taskAssigned', populatedTask);
+      }
     } catch (err) {
       console.error('Error creating task:', err);
     }
@@ -114,7 +125,7 @@ io.on('connection', (socket) => {
         task._id,
         { status: task.status },
         { new: true }
-      );
+      ).populate('assignedTo', 'email name');
       if (updatedTask) {
         console.log('Emitting taskUpdated to board:', updatedTask.board);
         io.to(`board:${updatedTask.board}`).emit('taskUpdated', updatedTask);
@@ -131,12 +142,20 @@ io.on('connection', (socket) => {
       console.log('Received editTask:', task);
       const updatedTask = await require('./models/Task').findByIdAndUpdate(
         task._id,
-        { title: task.title, description: task.description, dueDate: task.dueDate ? new Date(task.dueDate) : null },
+        {
+          title: task.title,
+          description: task.description,
+          dueDate: task.dueDate ? new Date(task.dueDate) : null,
+          assignedTo: task.assignedTo || null,
+        },
         { new: true }
-      );
+      ).populate('assignedTo', 'email name');
       if (updatedTask) {
         console.log('Emitting taskEdited to board:', updatedTask.board);
         io.to(`board:${updatedTask.board}`).emit('taskEdited', updatedTask);
+        if (updatedTask.assignedTo) {
+          io.to(`user:${updatedTask.assignedTo}`).emit('taskAssigned', updatedTask);
+        }
       } else {
         console.error('Task not found:', task._id);
       }
@@ -169,11 +188,42 @@ io.on('connection', (socket) => {
         user: comment.user,
         createdAt: comment.createdAt || new Date(),
       });
-      const populatedComment = await require('./models/Comment').findById(newComment._id).populate('user', 'email');
+      const populatedComment = await require('./models/Comment').findById(newComment._id).populate('user', 'email name');
       console.log('Emitting commentAdded to task:', comment.task);
       io.to(`task:${comment.task}`).emit('commentAdded', populatedComment);
     } catch (err) {
       console.error('Error adding comment:', err);
+    }
+  });
+
+  socket.on('inviteSent', async (data) => {
+    try {
+      console.log('Received inviteSent:', data);
+      io.to(`user:${data.userId}`).emit('inviteSent', data);
+    } catch (err) {
+      console.error('Error emitting inviteSent:', err);
+    }
+  });
+
+  socket.on('collaboratorAdded', async (collaborator, boardId) => {
+    try {
+      console.log('Received collaboratorAdded:', collaborator);
+      io.to(`board:${boardId}`).emit('collaboratorAdded', collaborator);
+    } catch (err) {
+      console.error('Error emitting collaboratorAdded:', err);
+    }
+  });
+
+  socket.on('taskAssigned', async (task) => {
+    try {
+      console.log('Received taskAssigned:', task);
+      const updatedTask = await require('./models/Task').findById(task._id).populate('assignedTo', 'email name');
+      if (updatedTask && task.assignedTo) {
+        io.to(`user:${task.assignedTo}`).emit('taskAssigned', updatedTask);
+      }
+      io.to(`board:${task.board}`).emit('taskAssigned', updatedTask);
+    } catch (err) {
+      console.error('Error emitting taskAssigned:', err);
     }
   });
 

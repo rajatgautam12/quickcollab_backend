@@ -25,13 +25,15 @@ const taskSchema = new mongoose.Schema({
     type: [String],
     default: [],
   },
+  assignedTo: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null,
+  },
   createdAt: {
     type: Date,
     default: Date.now,
   },
 });
-
-// Index for efficient queries
-
 
 module.exports = mongoose.model('Task', taskSchema);

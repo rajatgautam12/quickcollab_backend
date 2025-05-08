@@ -34,6 +34,4 @@ userSchema.methods.comparePassword = async function (password) {
   return await bcrypt.compare(password, this.password);
 };
 
-// Index for efficient queries
-
 module.exports = mongoose.model('User', userSchema);

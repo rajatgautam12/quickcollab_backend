@@ -11,8 +11,19 @@ const boardSchema = new mongoose.Schema({
     required: true,
   },
   collaborators: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+    },
+    email: {
+      type: String,
+      required: true,
+    },
+    role: {
+      type: String,
+      enum: ['Owner', 'Member'],
+      default: 'Member',
+    },
   }],
 }, { timestamps: true });
 
